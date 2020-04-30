@@ -2,44 +2,43 @@
 pragma solidity >=0.4.21 <0.7.0;
 
 
-contract NotarisationsV1
+contract Notarisations
 {
     address admin;
-    address auth;
-    mapping (uint256 => Notarisation) notarisations;
+    address gateway;
+    mapping (uint => Notarisation) notarisations;
     uint size;
-    uint lastHeight;
+    uint sequence;
 
     struct Notarisation {
-        uint hash;
+        uint height;
+        bytes32 hash;
         bytes extraData;
     }
 
     constructor(uint _size) public {
-        require(size > 0, "size must be > 0");
+        require(_size > 0, "size must be > 0");
         size = _size;
         admin = msg.sender;
     }
 
     function getAdmin() public view returns (address) { return admin; }
-    function getAuth()  public view returns (address) { return auth; }
+    function getGateway()  public view returns (address) { return gateway; }
 
     function setAdmin(address _newAdmin) public onlyAdmin { admin = _newAdmin; }
-    function setAuth(address _newAuth)   public onlyAdmin { auth = _newAuth; }
+    function setGateway(address _newGateway)   public onlyAdmin { gateway = _newGateway; }
 
-    function notarise(uint256 height, uint256 hash, bytes memory extraData)
-                      public onlyAuth {
-        notarisations[height % size] = Notarisation(hash, extraData);
+    function notarise(uint height, bytes32 hash, bytes memory extraData)
+                      public onlyGateway
+    {
+        uint seq = sequence++;
+        notarisations[seq % size] = Notarisation(height, hash, extraData);
     }
 
-    function getNotarisation(uint height) public view returns (uint, uint, bytes memory)
+    function getLastNotarisation() public view returns (uint, bytes32, bytes memory)
     {
-        if (height == 0) height = lastHeight;
-        require(lastHeight - height < size, "That's too far, Marty!");
-        Notarisation memory n = notarisations[height % size];
-        if (n.hash != 0)
-            return (height, n.hash, n.extraData);
-        return (0, 0, "");
+        Notarisation memory n = notarisations[(sequence - 1) % size];
+        return (n.height, n.hash, n.extraData);
     }
 
     modifier onlyAdmin {
@@ -47,8 +46,8 @@ contract NotarisationsV1
         _;
     }
 
-    modifier onlyAuth {
-        require(msg.sender == auth, "not auth");
+    modifier onlyGateway {
+        require(msg.sender == gateway, "not gateway");
         _;
     }
 }

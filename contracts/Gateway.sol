@@ -41,7 +41,7 @@ contract Gateway {
     /*
      * A nonce for proxy calls so they cannot be repeated
      */
-    uint256 proxyNonce;
+    mapping (address => uint256) nonceMap;
 
     constructor() public { admin = msg.sender; }
 
@@ -66,8 +66,6 @@ contract Gateway {
         members = _members;
     }
 
-    function getProxyNonce() public view returns (uint256) { return proxyNonce; }
-    
     function getConfig(string memory _key) public view returns (bytes memory) { return configs[_key]; }
     
     function setConfig(string memory _key, bytes memory _val) public onlyAdmin {
@@ -77,26 +75,29 @@ contract Gateway {
             configs[_key] = _val;
     }
     
+    function getNonce(address _key) public view returns (uint256) { return nonceMap[_key]; }
+    
     /*
      * Call with member sigs (split into r, s, v) sorted by address and if valid and
      * the threshold will proxy call to given target address
      */
-    function proxy(address _target, bytes memory _callData,
+    function proxy(address _target, uint _nonce, bytes memory _callData,
                    bytes32[] memory _vr, bytes32[] memory _vs, uint8[] memory _vv)
                    public onlyMember
                    returns (bool, bytes memory)
     {
         uint nMembers = members.length;
+        require(nMembers > 0, "no members");
         require(_vv.length >= requiredSigs, "not enough sigs");
         require(_vv.length == _vs.length && _vv.length == _vr.length, "arrays mismatched");
-        require(nMembers > 0, "no members");
+
+        require(_nonce > nonceMap[_target], "nonce is low");
+        nonceMap[_target] = _nonce;
 
         bytes32 sighash = keccak256(
             abi.encodePacked(
                 "\x19Ethereum Signed Message:\n32",
-                keccak256(abi.encodePacked(proxyNonce, _target, _callData))));
-
-        proxyNonce++;
+                keccak256(abi.encodePacked(address(this), _nonce, _target, _callData))));
 
         {
             uint memberIdx = 0;
