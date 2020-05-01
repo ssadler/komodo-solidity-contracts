@@ -5,11 +5,10 @@
  * 2020 Scott Sadler
  * 
  * This contract is designed to act as a multisig proxy so that a consortium
- * can perform transactions on the Ethereum blockchain. It has the following
- * features:
- *
- * 1. Proxy calls to another contract when signed by at least m of n members
- * 2. Store configs of data to be able to update member directives / config on the go
+ * can coordinate to perform actions on the Ethereum blockchain.
+ * 
+ * It includes a members list, a threshold proxying function, and a key/value map for
+ * configurations.
  *
  */
 
@@ -18,52 +17,62 @@ pragma solidity >=0.4.21 <0.7.0;
 
 contract Gateway {
 
-    /*
-     * Admin address
-     */
     address admin;
-
-    /*
-     * Sorted list of members
-     */
-    address[] members;
-
-    /*
-     * Number of member signatures required to proxy a call
-     */
     uint requiredSigs;
-
-    /*
-     * A place to store directives
-     */
+    uint membersLength;
+    address startAddress = maxAddress;
+    mapping (address => address) members;
     mapping (string => bytes) configs;
-
-    /*
-     * A nonce for proxy calls so they cannot be repeated
-     */
     mapping (address => uint256) nonceMap;
+
+    address constant maxAddress = 0xFFfFfFffFFfffFFfFFfFFFFFffFFFffffFfFFFfF;
 
     constructor() public { admin = msg.sender; }
 
     function getAdmin() public view returns (address) { return admin; }
 
     function setAdmin(address _newAdmin) public onlyAdmin { admin = _newAdmin; }
-
-    function getMembers() public view returns (uint, address[] memory) { return (requiredSigs, members); }
+    
+    function getMembers() public view returns (uint, address[] memory) {
+        address[] memory ms = new address[](membersLength);
+        uint i=0;
+        for (address cur = startAddress; cur != maxAddress; cur = members[cur])
+            ms[i++] = cur;
+        return (requiredSigs, ms);
+    }
 
     /*
-     * Set member addresses and threshold. Addresses must be sorted.
-     * If members are set to empty, or requiredSigs is too high, proxy will be impossible.
+     * Set member addresses and threshold.
+     * If members are set to empty, or requiredSigs is too high, or zero,
+     * proxy will be impossible.
      */
-    function setMembers(uint8 _requiredSigs, address[] memory _members) public onlyAdmin
+    function setMembers(uint8 _requiredSigs, address[] memory _addrs) public onlyAdmin
     {
         requiredSigs = _requiredSigs;
+        membersLength = _addrs.length;
 
-        if (_members.length > 1)
-            for (uint i=0; i<_members.length-1; i++)
-                require(_members[i] < _members[i+1], "member keys must be sorted");
+        /// Linked list update is a little complex
+        /// but has best cost efficiency and fast lookups.
 
-        members = _members;
+        address cur = startAddress;
+        startAddress = _addrs.length == 0 ? maxAddress : _addrs[0];
+        for (uint i=0; i<=_addrs.length; i++) {
+            address m = i == _addrs.length ? maxAddress : _addrs[i];
+            while (m > cur) {
+                address s = cur;
+                cur = members[cur];
+                delete members[s];
+            }
+            address oldcur = cur;
+            if (m == cur) cur = members[cur];
+
+            if (i < _addrs.length) {
+                address m1 = i == _addrs.length-1 ? maxAddress : _addrs[i+1];
+                require(m < m1, "members must be sorted");
+                if (m != oldcur || m1 != members[oldcur])
+                    members[m] = m1;
+            }
+        }
     }
 
     function getConfig(string memory _key) public view returns (bytes memory) { return configs[_key]; }
@@ -80,14 +89,16 @@ contract Gateway {
     /*
      * Call with member sigs (split into r, s, v) sorted by address and if valid and
      * the threshold will proxy call to given target address
+     * 
+     * The nonce should be specific to the target, and must increase on each call for each
+     * target. It can increase by any amount, it does not need to increase by just 1.
      */
     function proxy(address _target, uint _nonce, bytes memory _callData,
                    bytes32[] memory _vr, bytes32[] memory _vs, uint8[] memory _vv)
                    public onlyMember
                    returns (bool, bytes memory)
     {
-        uint nMembers = members.length;
-        require(nMembers > 0, "no members");
+        require(requiredSigs > 0, "disabled");
         require(_vv.length >= requiredSigs, "not enough sigs");
         require(_vv.length == _vs.length && _vv.length == _vr.length, "arrays mismatched");
 
@@ -99,43 +110,20 @@ contract Gateway {
                 "\x19Ethereum Signed Message:\n32",
                 keccak256(abi.encodePacked(address(this), _nonce, _target, _callData))));
 
-        {
-            uint memberIdx = 0;
-            
-            for (uint i=0; i<_vv.length; i++) {
-                address addr = ecrecover(sighash, _vv[i], _vr[i], _vs[i]);
-                while (true) {
-                    require(memberIdx < nMembers, "wrong sig or not sorted by address");
-                    if (addr == members[memberIdx++]) break;
-                }
-            }
+        address last;
+        
+        for (uint i=0; i<_vv.length; i++) {
+            address r = ecrecover(sighash, _vv[i], _vr[i], _vs[i]);
+            require(r > last && isMember(r), "wrong sig or not sorted by address");
+            last = r;
         }
         
         return _target.call(_callData);
     }
 
-    function isMember(address subject) public view returns (bool)
+    function isMember(address addr) public view returns (bool)
     {
-        /// Binary search is much cheaper than scan because I/O is very expensive
-
-        uint lo = 0;
-        uint hi = members.length;
-        if (hi == 0) return false;
-        hi -= 1;
-
-        while (true) {
-            uint mid = (lo + hi) >> 1;
-            address midmember = members[mid];
-            if (subject > midmember) {
-                if (mid == hi) return false;
-                lo = mid + 1;
-            } else if (subject < midmember) {
-                if (mid == 0) return false;
-                hi = mid - 1;
-            } else {
-                return true;
-            }
-        }
+        return members[addr] != address(0);
     }
 
     modifier onlyMember {

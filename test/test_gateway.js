@@ -42,7 +42,7 @@ contract("Gateway", accounts => {
 
         it("should fail if member keys are not sorted", async () => {
             let auth = await Gateway.new();
-            await assertFail("member keys must be sorted", 
+            await assertFail("members must be sorted", 
                 auth.setMembers(2, [members[1], members[0]])
             );
         });
@@ -56,15 +56,22 @@ contract("Gateway", accounts => {
 
         it("Correctly checks membership", async () => {
             let auth = await Gateway.new();
-            for (var i=0; i<accounts.length-1; i++) {
-                let mx = accounts.slice(0, i);
-                mx.sort();
-                await auth.setMembers(0, mx);
-
-                for (var j=0; j<=i; j++) {
-                    assert.equal(j<mx.length, await auth.isMember(accounts[j]));
+            let check = async ms => {
+                ms.sort();
+                await auth.setMembers(0, ms);
+                for (var i=0; i<accounts.length; i++) {
+                    assert.equal(ms.includes(accounts[i]), await auth.isMember(accounts[i]));
                 }
+                let r = await auth.getMembers();
+                assert.equal(r['0'], 0);
+                for (let i=0; i<ms.length; i++) assert.equal(ms[i], r['1'][i]);
             }
+            await check([accounts[0], accounts[2], accounts[4]]);
+            await check([accounts[1], accounts[3], accounts[5]]);
+            await check([accounts[1], accounts[2], accounts[5]]);
+            await check([]);
+            await check(accounts.splice());
+            await check([accounts[4]]);
         });
     });
 
@@ -178,6 +185,9 @@ contract("Gateway", accounts => {
             await assertFail("not member", callProxy({ from: accounts[6] }));
         });
 
+        it('fail with requiredSigs == 0', async () => {
+            await assertFail("disabled", callProxy({ m: 0 }));
+        });
     });
 
     describe("proxy sig failures", async () => {
@@ -192,19 +202,19 @@ contract("Gateway", accounts => {
         }
 
         it("fail if sigs are ok but out of order", async () => {
-            controlProxyFailure(
+            await controlProxyFailure(
                 { signers: [members[0], members[1]] },
                 { signers: [members[1], members[0]] });
         });
 
         it("fail if many sigs are the same", async () => {
-            controlProxyFailure(
+            await controlProxyFailure(
                 { signers: [members[0], members[1]] },
                 { signers: [members[0], members[0]] });
         });
 
         it("fail if message has wrong gateway address", async () => {
-            controlProxyFailure(
+            await controlProxyFailure(
                 { msgTarget: undefined },
                 { msgTarget: "0xd401428714c14d8e81743abe82e9c6dd2f725196" });
         });
@@ -212,7 +222,7 @@ contract("Gateway", accounts => {
         it("fail if sigs are wrong members", async () => {
             let wmembers = [accounts[0], accounts[6]];
             wmembers.sort();
-            controlProxyFailure(
+            await controlProxyFailure(
                 { signers: [members[0], members[1]] },
                 { signers: wmembers });
         });
