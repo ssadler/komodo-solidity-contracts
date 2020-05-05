@@ -107,9 +107,7 @@ contract("Gateway", accounts => {
         let target = args.target || auth.address;
 
         let nonce = g(args.nonce, await auth.getNonce(target) + 1);
-        let msg = web3.utils.soliditySha3(
-                        args.msgTarget || auth.address,
-                        nonce, target, callData);
+        let msg = web3.utils.soliditySha3(target, nonce, callData);
 
         let r = [];
         let s = [];
@@ -127,6 +125,32 @@ contract("Gateway", accounts => {
     }
 
     describe("proxy", async () => {
+
+        it('succeed if properly signed', async () => {
+          let res = await callProxy({ call: 1 });
+          assert.equal(
+              accounts[0],
+              web3.eth.abi.decodeParameter('address', res),
+              "unexpected return data");
+        });
+
+        it('revert if properly signed but call fails', async () => {
+          let auth = await Gateway.new();
+
+          let callData = web3.eth.abi.encodeFunctionCall({
+            name: "setAdmin",
+            type: "function",
+            inputs: [{ type: 'address', name: '_newAdmin' }]
+          }, [accounts[0]]);
+
+          try {
+            await callProxy({ auth, callData });
+            assert.fail();
+          } catch (e) {
+            assert((e+"").includes("revert"));
+            assert((e+"").includes("not admin"));
+          }
+        });
 
         let zz = "0x0000000000000000000000000000000000000000000000000000000000000000";
 
@@ -148,15 +172,6 @@ contract("Gateway", accounts => {
             await assertFail("not enough sigs", 
                 callProxy({ signers: [accounts[0]] })
             );
-        });
-
-        it('succeed if properly signed', async () => {
-            let res = await callProxy({call: 1});
-            assert(res['0'], "proxy call failed");
-            assert.equal(
-                accounts[0],
-                web3.eth.abi.decodeParameter('address', res['1']),
-                "unexpected return data");
         });
 
         it("nonce must increment", async () => {
@@ -213,12 +228,6 @@ contract("Gateway", accounts => {
                 { signers: [members[0], members[0]] });
         });
 
-        it("fail if message has wrong gateway address", async () => {
-            await controlProxyFailure(
-                { msgTarget: undefined },
-                { msgTarget: "0xd401428714c14d8e81743abe82e9c6dd2f725196" });
-        });
-
         it("fail if sigs are wrong members", async () => {
             let wmembers = [accounts[0], accounts[6]];
             wmembers.sort();
@@ -235,8 +244,9 @@ let signParts = async (msg, addr, r, s, v) => {
     assert.equal(web3.eth.accounts.recover(msg, sig, false), addr, 'recover failed');
 
     r.push(sig.substr(0, 66));
-    s.push("0x" + sig.substr(66,64));
+    s.push("0x" + sig.substr(66, 64));
     v.push(sig.substr(131) == '1' ? 28 : 27);
+    // v.push(2 + 35 + parseInt(sig.substr(131)));
 };
 
 let assertFail = async (reason, p) => {

@@ -13,6 +13,7 @@ contract Notarisations
     struct Notarisation {
         uint height;
         bytes32 hash;
+        uint ourHeight;
         bytes extraData;
     }
 
@@ -23,22 +24,22 @@ contract Notarisations
     }
 
     function getAdmin() public view returns (address) { return admin; }
-    function getGateway()  public view returns (address) { return gateway; }
+    function getGateway() public view returns (address) { return gateway; }
 
     function setAdmin(address _newAdmin) public onlyAdmin { admin = _newAdmin; }
-    function setGateway(address _newGateway)   public onlyAdmin { gateway = _newGateway; }
+    function setGateway(address _newGateway) public onlyAdmin { gateway = _newGateway; }
 
     function notarise(uint height, bytes32 hash, bytes memory extraData)
                       public onlyGateway
     {
-        uint seq = sequence++;
-        notarisations[seq % size] = Notarisation(height, hash, extraData);
+        sequence++;
+        notarisations[sequence % size] = Notarisation(height, hash, block.number, extraData);
     }
 
-    function getLastNotarisation() public view returns (uint, bytes32, bytes memory)
+    function getLastNotarisation() public view returns (uint, bytes32, uint, bytes memory)
     {
-        Notarisation memory n = notarisations[(sequence - 1) % size];
-        return (n.height, n.hash, n.extraData);
+        Notarisation memory n = notarisations[sequence % size];
+        return (n.height, n.hash, n.ourHeight, n.extraData);
     }
 
     modifier onlyAdmin {

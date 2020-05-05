@@ -56,23 +56,32 @@ contract Gateway {
 
         address cur = startAddress;
         startAddress = _addrs.length == 0 ? maxAddress : _addrs[0];
+
         for (uint i=0; i<=_addrs.length; i++) {
+
             address m = i == _addrs.length ? maxAddress : _addrs[i];
+
             while (m > cur) {
                 address s = cur;
                 cur = members[cur];
                 delete members[s];
             }
+
+            if (i == _addrs.length) break;
+
             address oldcur = cur;
             if (m == cur) cur = members[cur];
 
-            if (i < _addrs.length) {
-                address m1 = i == _addrs.length-1 ? maxAddress : _addrs[i+1];
-                require(m < m1, "members must be sorted");
-                if (m != oldcur || m1 != members[oldcur])
-                    members[m] = m1;
-            }
+            address m1 = i == _addrs.length-1 ? maxAddress : _addrs[i+1];
+            require(m < m1, "members must be sorted");
+            if (m != oldcur || m1 != members[oldcur])
+                members[m] = m1;
         }
+    }
+
+    function isMember(address addr) public view returns (bool)
+    {
+        return members[addr] != address(0);
     }
 
     function getConfig(string memory _key) public view returns (bytes memory) { return configs[_key]; }
@@ -94,9 +103,9 @@ contract Gateway {
      * target. It can increase by any amount, it does not need to increase by just 1.
      */
     function proxy(address _target, uint _nonce, bytes memory _callData,
-                   bytes32[] memory _vr, bytes32[] memory _vs, uint8[] memory _vv)
+                   bytes32[] memory _vr, bytes32[] memory _vs, bytes memory _vv)
                    public onlyMember
-                   returns (bool, bytes memory)
+                   returns (bytes memory)
     {
         require(requiredSigs > 0, "disabled");
         require(_vv.length >= requiredSigs, "not enough sigs");
@@ -105,25 +114,28 @@ contract Gateway {
         require(_nonce > nonceMap[_target], "nonce is low");
         nonceMap[_target] = _nonce;
 
-        bytes32 sighash = keccak256(
-            abi.encodePacked(
-                "\x19Ethereum Signed Message:\n32",
-                keccak256(abi.encodePacked(address(this), _nonce, _target, _callData))));
+        bytes32 sighash = getProxyMessage(_target, _nonce, _callData);
 
         address last;
         
         for (uint i=0; i<_vv.length; i++) {
-            address r = ecrecover(sighash, _vv[i], _vr[i], _vs[i]);
+            address r = ecrecover(sighash, uint8(_vv[i]), _vr[i], _vs[i]);
             require(r > last && isMember(r), "wrong sig or not sorted by address");
             last = r;
         }
         
-        return _target.call(_callData);
+        (bool success, bytes memory data) = _target.call(_callData);
+        if (!success) revert(string(data));
+        return data;
     }
 
-    function isMember(address addr) public view returns (bool)
+    function getProxyMessage(address _target, uint _nonce, bytes memory _callData)
+                             internal pure returns (bytes32)
     {
-        return members[addr] != address(0);
+        return keccak256(
+            abi.encodePacked(
+                "\x19Ethereum Signed Message:\n32",
+                keccak256(abi.encodePacked(_target, _nonce, _callData))));
     }
 
     modifier onlyMember {

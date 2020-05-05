@@ -1,3 +1,29 @@
+
+/*
+ * Configuration for truffle
+ *
+ * Create a file `truffle-local.js` like this:
+ *
+ * exports.setup = config => { ... modify the config in place ... }
+ *
+ * And *don't* commit that file to the repository :-).
+ *
+ * Reason:
+ * Confuration is different depending on which providers you use to access the blockchain.
+ * This file should contain sensible defaults. It should be sufficient to run the tests
+ * via `truffle develop`, however, beyond that the configuration and especially providers
+ * may be quite different depending on the user.
+ */
+
+function localSetup() {
+  const fs = require('fs');
+  const local = './truffle-local.js';
+  if (fs.existsSync(local)) {
+    let setup = require(local).setup;
+    setup(module.exports);
+  }
+};
+
 /**
  * Use this file to configure your truffle project. It's seeded with some
  * common settings for different networks and features like migrations,
@@ -97,3 +123,5 @@ module.exports = {
     }
   }
 }
+
+localSetup(module.exports);
