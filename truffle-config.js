@@ -20,7 +20,7 @@ function localSetup() {
   const local = './truffle-local.js';
   if (fs.existsSync(local)) {
     let setup = require(local).setup;
-    setup(module.exports);
+    setup(conf);
   }
 };
 
@@ -50,7 +50,7 @@ function localSetup() {
 // const fs = require('fs');
 // const mnemonic = fs.readFileSync(".secret").toString().trim();
 
-module.exports = {
+const conf = {
   /**
    * Networks define how you connect to your ethereum client and let you set the
    * defaults web3 uses to send transactions. If you don't specify one truffle
@@ -122,6 +122,7 @@ module.exports = {
       // }
     }
   }
-}
+};
 
-localSetup(module.exports);
+localSetup()
+module.exports = conf;
