@@ -11,7 +11,7 @@ contract Notarisations
     uint sequence;
 
     struct Notarisation {
-        uint height;
+        uint theirHeight;
         bytes32 hash;
         uint ourHeight;
         bytes extraData;
@@ -39,7 +39,7 @@ contract Notarisations
     function getLastNotarisation() public view returns (uint, bytes32, uint, bytes memory)
     {
         Notarisation memory n = notarisations[sequence % size];
-        return (n.height, n.hash, n.ourHeight, n.extraData);
+        return (n.theirHeight, n.hash, n.ourHeight, n.extraData);
     }
 
     modifier onlyAdmin {
