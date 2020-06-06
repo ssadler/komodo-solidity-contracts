@@ -36,10 +36,10 @@ contract Notarisations
         notarisations[sequence % size] = Notarisation(height, hash, block.number, extraData);
     }
 
-    function getLastNotarisation() public view returns (uint, bytes32, uint, bytes memory)
+    function getLastNotarisation() public view returns (uint, bytes32, uint, bytes memory, uint)
     {
         Notarisation memory n = notarisations[sequence % size];
-        return (n.theirHeight, n.hash, n.ourHeight, n.extraData);
+        return (n.theirHeight, n.hash, n.ourHeight, n.extraData, sequence);
     }
 
     modifier onlyAdmin {
